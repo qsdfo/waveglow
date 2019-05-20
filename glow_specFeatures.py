@@ -56,8 +56,8 @@ class WaveGlowLoss(torch.nn.Module):
                 log_det_W_total += log_det_W_list[i]
 
         loss = torch.sum(z * z) / (2 * self.sigma * self.sigma)  # Base distribution likelihood
-        loss += - log_s_total  #  Log det jacobian (equal to sigma product because of coupling layers)
-        loss += - log_det_W_total # ensure invertibility (prevent det W = 0, push W toward orthogonal matrix)
+        loss += - log_s_total  #  Log det of the coupling layer
+        loss += - log_det_W_total  #  Log det of the invertible convolution
         return loss / (z.size(0) * z.size(1) * z.size(2))
 
 
@@ -156,14 +156,17 @@ class WN(torch.nn.Module):
             self.res_skip_layers.append(res_skip_layer)
 
     def forward(self, forward_input):
-        audio, spect = forward_input
+        audio, cond = forward_input
         audio = self.start(audio)
 
         for i in range(self.n_layers):
+            #---------------------------------------------------------------------------
+            # Todo here is about the conditioning !!!!
             acts = fused_add_tanh_sigmoid_multiply(
                 self.in_layers[i](audio),
-                self.cond_layers[i](spect),
+                self.cond_layers[i](cond),
                 torch.IntTensor([self.n_channels]))
+            # ---------------------------------------------------------------------------
 
             res_skip_acts = self.res_skip_layers[i](acts)
             if i < self.n_layers - 1:
@@ -179,10 +182,10 @@ class WN(torch.nn.Module):
         return self.end(output)
 
 
-class WaveGlow(torch.nn.Module):
+class WaveGlowSpecFeatures(torch.nn.Module):
     def __init__(self, n_mel_channels, n_flows, n_group, n_early_every,
                  n_early_size, WN_config):
-        super(WaveGlow, self).__init__()
+        super(WaveGlowSpecFeatures, self).__init__()
 
         self.upsample = torch.nn.ConvTranspose1d(n_mel_channels,
                                                  n_mel_channels,
@@ -210,19 +213,22 @@ class WaveGlow(torch.nn.Module):
 
     def forward(self, forward_input):
         """
-        forward_input[0] = mel_spectrogram:  batch x n_mel_channels x frames
+        forward_input[0] = conditioning features:  batch x feature_dim
         forward_input[1] = audio: batch x time
         """
-        spect, audio = forward_input
+        condition, audio = forward_input
 
+        # -----------------------------------------------------------------------------------------------
+        #  Todo Need this on condition ????
         #  Upsample spectrogram to size of audio
-        spect = self.upsample(spect)
-        assert (spect.size(2) >= audio.size(1))
-        if spect.size(2) > audio.size(1):
-            spect = spect[:, :, :audio.size(1)]
-
-        spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
-        spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
+        # spect = self.upsample(spect)
+        # assert (spect.size(2) >= audio.size(1))
+        # if spect.size(2) > audio.size(1):
+        #     spect = spect[:, :, :audio.size(1)]
+        #
+        # spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
+        # spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
+        # -----------------------------------------------------------------------------------------------
 
         audio = audio.unfold(1, self.n_group, self.n_group).permute(0, 2, 1)
         output_audio = []
@@ -241,7 +247,7 @@ class WaveGlow(torch.nn.Module):
             audio_0 = audio[:, :n_half, :]
             audio_1 = audio[:, n_half:, :]
 
-            output = self.WN[k]((audio_0, spect))
+            output = self.WN[k]((audio_0, condition))
             log_s = output[:, n_half:, :]
             b = output[:, :n_half, :]
             audio_1 = torch.exp(log_s) * audio_1 + b

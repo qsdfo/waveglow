@@ -1,0 +1,4 @@
+- spectrogram music with pre-trained model ?
+- remove conditioning, train on SOL
+- conditioning spectral features
+- VarNet / Glow

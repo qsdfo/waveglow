@@ -29,14 +29,16 @@ import json
 import os
 import torch
 
-#=====START: ADDED FOR DISTRIBUTED======
+# =====START: ADDED FOR DISTRIBUTED====0==
 from distributed import init_distributed, apply_gradient_allreduce, reduce_tensor
 from torch.utils.data.distributed import DistributedSampler
-#=====END:   ADDED FOR DISTRIBUTED======
+# =====END:   ADDED FOR DISTRIBUTED======
 
 from torch.utils.data import DataLoader
 from glow import WaveGlow, WaveGlowLoss
 from mel2samp import Mel2Samp
+from dataSpecFeatures import SpecFeatures
+
 
 def load_checkpoint(checkpoint_path, model, optimizer):
     assert os.path.isfile(checkpoint_path)
@@ -45,13 +47,14 @@ def load_checkpoint(checkpoint_path, model, optimizer):
     optimizer.load_state_dict(checkpoint_dict['optimizer'])
     model_for_loading = checkpoint_dict['model']
     model.load_state_dict(model_for_loading.state_dict())
-    print("Loaded checkpoint '{}' (iteration {})" .format(
-          checkpoint_path, iteration))
+    print("Loaded checkpoint '{}' (iteration {})".format(
+        checkpoint_path, iteration))
     return model, optimizer, iteration
+
 
 def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
     print("Saving model and optimizer state at iteration {} to {}".format(
-          iteration, filepath))
+        iteration, filepath))
     model_for_saving = WaveGlow(**waveglow_config).cuda()
     model_for_saving.load_state_dict(model.state_dict())
     torch.save({'model': model_for_saving,
@@ -59,23 +62,24 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'optimizer': optimizer.state_dict(),
                 'learning_rate': learning_rate}, filepath)
 
+
 def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
           sigma, iters_per_checkpoint, batch_size, seed, fp16_run,
           checkpoint_path):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    #=====START: ADDED FOR DISTRIBUTED======
+    # =====START: ADDED FOR DISTRIBUTED======
     if num_gpus > 1:
         init_distributed(rank, num_gpus, group_name, **dist_config)
-    #=====END:   ADDED FOR DISTRIBUTED======
+    # =====END:   ADDED FOR DISTRIBUTED======
 
     criterion = WaveGlowLoss(sigma)
     model = WaveGlow(**waveglow_config).cuda()
 
-    #=====START: ADDED FOR DISTRIBUTED======
+    # =====START: ADDED FOR DISTRIBUTED======
     if num_gpus > 1:
         model = apply_gradient_allreduce(model)
-    #=====END:   ADDED FOR DISTRIBUTED======
+    # =====END:   ADDED FOR DISTRIBUTED======
 
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -90,7 +94,9 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                                                       optimizer)
         iteration += 1  # next iteration is iteration + 1
 
+    # trainset = SpecFeatures(**data_config)
     trainset = Mel2Samp(**data_config)
+
     # =====START: ADDED FOR DISTRIBUTED======
     train_sampler = DistributedSampler(trainset) if num_gpus > 1 else None
     # =====END:   ADDED FOR DISTRIBUTED======
@@ -128,7 +134,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
 
             if fp16_run:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
-                     scaled_loss.backward()
+                    scaled_loss.backward()
             else:
                 loss.backward()
 
@@ -144,6 +150,7 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
                                     checkpoint_path)
 
             iteration += 1
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
