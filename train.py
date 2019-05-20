@@ -35,7 +35,7 @@ from torch.utils.data.distributed import DistributedSampler
 # =====END:   ADDED FOR DISTRIBUTED======
 
 from torch.utils.data import DataLoader
-from glow import WaveGlow, WaveGlowLoss
+from glow_new import WaveGlow, WaveGlowLoss
 from mel2samp import Mel2Samp
 from dataSpecFeatures import SpecFeatures
 
@@ -63,7 +63,7 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'learning_rate': learning_rate}, filepath)
 
 
-def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
+def train(num_gpus, rank, group_name, conditioning_flag, output_directory, epochs, learning_rate,
           sigma, iters_per_checkpoint, batch_size, seed, fp16_run,
           checkpoint_path):
     torch.manual_seed(seed)
@@ -122,7 +122,10 @@ def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
             model.zero_grad()
 
             mel, audio = batch
-            mel = torch.autograd.Variable(mel.cuda())
+            if conditioning_flag:
+                mel = torch.autograd.Variable(mel.cuda())
+            else:
+                mel = None
             audio = torch.autograd.Variable(audio.cuda())
             outputs = model((mel, audio))
 
@@ -186,4 +189,7 @@ if __name__ == "__main__":
 
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
-    train(num_gpus, args.rank, args.group_name, **train_config)
+
+    conditioning_flag = False
+
+    train(num_gpus, args.rank, args.group_name, conditioning_flag, **train_config)

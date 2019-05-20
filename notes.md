@@ -6,4 +6,3 @@
 - remove conditioning, train on SOL
 - conditioning spectral features
 - VarNet / Glow
-- increase parameters fmax ?? to small for audio...
