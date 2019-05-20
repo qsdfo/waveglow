@@ -33,7 +33,10 @@ import torch.nn.functional as F
 @torch.jit.script
 def fused_add_tanh_sigmoid_multiply(input_a, input_b, n_channels):
     n_channels_int = n_channels[0]
-    in_act = input_a + input_b
+    if input_b is None:
+        in_act = input_a
+    else:
+        in_act = input_a + input_b
     t_act = torch.tanh(in_act[:, :n_channels_int, :])
     s_act = torch.sigmoid(in_act[:, n_channels_int:, :])
     acts = t_act * s_act
@@ -160,9 +163,14 @@ class WN(torch.nn.Module):
         audio = self.start(audio)
 
         for i in range(self.n_layers):
+            if spect is None:
+                conditioning = None
+            else:
+                conditioning = self.cond_layers[i](spect)
+
             acts = fused_add_tanh_sigmoid_multiply(
                 self.in_layers[i](audio),
-                self.cond_layers[i](spect),
+                conditioning,
                 torch.IntTensor([self.n_channels]))
 
             res_skip_acts = self.res_skip_layers[i](acts)
@@ -216,13 +224,14 @@ class WaveGlow(torch.nn.Module):
         spect, audio = forward_input
 
         #  Upsample spectrogram to size of audio
-        spect = self.upsample(spect)
-        assert (spect.size(2) >= audio.size(1))
-        if spect.size(2) > audio.size(1):
-            spect = spect[:, :, :audio.size(1)]
+        if spect is not None:
+            spect = self.upsample(spect)
+            assert (spect.size(2) >= audio.size(1))
+            if spect.size(2) > audio.size(1):
+                spect = spect[:, :, :audio.size(1)]
 
-        spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
-        spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
+            spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
+            spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
 
         audio = audio.unfold(1, self.n_group, self.n_group).permute(0, 2, 1)
         output_audio = []

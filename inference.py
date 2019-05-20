@@ -32,7 +32,7 @@ from denoiser import Denoiser
 
 
 def main(mel_files, waveglow_path, sigma, output_dir, sampling_rate, is_fp16,
-         denoiser_strength):
+         denoiser_strength, batch_size):
     mel_files = files_to_list(mel_files)
     waveglow = torch.load(waveglow_path)['model']
     waveglow = waveglow.remove_weightnorm(waveglow)
@@ -51,16 +51,17 @@ def main(mel_files, waveglow_path, sigma, output_dir, sampling_rate, is_fp16,
         mel = torch.unsqueeze(mel, 0)
         mel = mel.half() if is_fp16 else mel
         with torch.no_grad():
+            mel = mel.repeat(batch_size, 1, 1)
             audio = waveglow.infer(mel, sigma=sigma)
             if denoiser_strength > 0:
                 audio = denoiser(audio, denoiser_strength)
             audio = audio * MAX_WAV_VALUE
-        audio = audio.squeeze()
         audio = audio.cpu().numpy()
         audio = audio.astype('int16')
-        audio_path = os.path.join(
-            output_dir, "{}_synthesis.wav".format(file_name))
-        write(audio_path, sampling_rate, audio)
+        for batch_ind in range(batch_size):
+            audio_path = os.path.join(
+                output_dir, f"{file_name}_{batch_ind}.wav")
+            write(audio_path, sampling_rate, audio[batch_ind])
         print(audio_path)
 
 
@@ -77,8 +78,9 @@ if __name__ == "__main__":
     parser.add_argument("--is_fp16", action="store_true")
     parser.add_argument("-d", "--denoiser_strength", default=0.0, type=float,
                         help='Removes model bias. Start with 0.1 and adjust')
-
+    parser.add_argument("--batch_size", default=3, type=int,
+                        help='Number of generations')
     args = parser.parse_args()
 
     main(args.filelist_path, args.waveglow_path, args.sigma, args.output_dir,
-         args.sampling_rate, args.is_fp16, args.denoiser_strength)
+         args.sampling_rate, args.is_fp16, args.denoiser_strength, args.batch_size)

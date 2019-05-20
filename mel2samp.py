@@ -56,13 +56,6 @@ def load_wav_to_torch(full_path):
     Loads wavdata into torch array
     """
     sampling_rate, data = read(full_path)
-    if len(data.shape) == 2:
-        # Convert stereo to mono
-        data = (data[:, 0] + data[:, 1]) / 2
-
-    from scipy.io.wavfile import write
-    write('test.wav', sampling_rate, data)
-
     return torch.from_numpy(data).float(), sampling_rate
 
 
