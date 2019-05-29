@@ -67,7 +67,7 @@ class WaveGlowLoss(torch.nn.Module):
 
         loss = torch.sum(z * z) / (2 * self.sigma * self.sigma)  # Base distribution likelihood
         loss += - log_s_total  #  Log det jacobian (equal to sigma product because of coupling layers)
-        loss += - log_det_W_total # ensure invertibility (prevent det W = 0, push W toward orthogonal matrix)
+        loss += - log_det_W_total  #  ensure invertibility (prevent det W = 0, push W toward orthogonal matrix)
         return loss / (z.size(0) * z.size(1) * z.size(2))
 
 
@@ -80,10 +80,12 @@ class Invertible1x1Conv(torch.nn.Module):
 
     def __init__(self, c):
         super(Invertible1x1Conv, self).__init__()
+        # kernel_size = 1, just used to mix channels
         self.conv = torch.nn.Conv1d(c, c, kernel_size=1, stride=1, padding=0,
                                     bias=False)
 
         # Sample a random orthonormal matrix to initialize weights
+        #  qr is QR decomposition where Q is orthogonal and R upper-tri
         W = torch.qr(torch.FloatTensor(c, c).normal_())[0]
 
         # Ensure determinant is 1.0 not -1.0
@@ -172,7 +174,7 @@ class WN(torch.nn.Module):
         for i in range(self.n_layers):
             if spect is None:
                 acts = fused_add_tanh_sigmoid_multiply_unconditionned(self.in_layers[i](audio),
-                                                               torch.IntTensor([self.n_channels]))
+                                                                      torch.IntTensor([self.n_channels]))
             else:
                 acts = fused_add_tanh_sigmoid_multiply(
                     self.in_layers[i](audio),
@@ -195,7 +197,7 @@ class WN(torch.nn.Module):
 
 class WaveGlow(torch.nn.Module):
     def __init__(self, n_mel_channels, n_flows, n_group, n_early_every,
-                 n_early_size, WN_config):
+                 n_early_size, WN_config, conditioning_flag):
         super(WaveGlow, self).__init__()
 
         self.upsample = torch.nn.ConvTranspose1d(n_mel_channels,
@@ -208,6 +210,7 @@ class WaveGlow(torch.nn.Module):
         self.n_early_size = n_early_size
         self.WN = torch.nn.ModuleList()
         self.convinv = torch.nn.ModuleList()
+        self.conditioning_flag = conditioning_flag
 
         n_half = int(n_group / 2)
 
@@ -239,6 +242,12 @@ class WaveGlow(torch.nn.Module):
             spect = spect.unfold(2, self.n_group, self.n_group).permute(0, 2, 1, 3)
             spect = spect.contiguous().view(spect.size(0), spect.size(1), -1).permute(0, 2, 1)
 
+        #  Groups:
+        # g0: [0, 8, 16, ...]
+        # g1: [1, 9, 17, ...]
+        # g2: [2, 10, 18, ...]
+        # ...
+        # n_group
         audio = audio.unfold(1, self.n_group, self.n_group).permute(0, 2, 1)
         output_audio = []
         log_s_list = []

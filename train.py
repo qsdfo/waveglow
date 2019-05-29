@@ -63,11 +63,14 @@ def save_checkpoint(model, optimizer, learning_rate, iteration, filepath):
                 'learning_rate': learning_rate}, filepath)
 
 
-def train(num_gpus, rank, group_name, conditioning_flag, output_directory, epochs, learning_rate,
+def train(num_gpus, rank, group_name, output_directory, epochs, learning_rate,
           sigma, iters_per_checkpoint, batch_size, seed, fp16_run,
           checkpoint_path):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
+
+    conditioning_flag = waveglow_config["conditioning_flag"]
+
     # =====START: ADDED FOR DISTRIBUTED======
     if num_gpus > 1:
         init_distributed(rank, num_gpus, group_name, **dist_config)
@@ -190,6 +193,4 @@ if __name__ == "__main__":
     torch.backends.cudnn.enabled = True
     torch.backends.cudnn.benchmark = False
 
-    conditioning_flag = False
-
-    train(num_gpus, args.rank, args.group_name, conditioning_flag, **train_config)
+    train(num_gpus, args.rank, args.group_name, **train_config)
